@@ -1,6 +1,6 @@
 h1. Introduction
 
-Acl9 is yet another solution for role-based authorization in Rails. It consists of two
+Acl9 is a solution for role-based authorization in Rails. It consists of two
 subsystems which can be used separately.
 
 *Role control subsystem* allows you to set and query user roles for various objects.
@@ -107,7 +107,7 @@ _Editor-in-chief_ should be able to change everything.
 We clearly see that journalists and section editors are tied to a specific section, whereas
 editor-in-chief is a role with global scope.
 
-h2. Role interface 
+h2. Role interface
 
 All permission checks in Acl9 are boiled down to calls of a single method:
 
@@ -116,7 +116,7 @@ All permission checks in Acl9 are boiled down to calls of a single method:
 That should be read as "Does _subject_ have _role_ on _object_?".
 
 Subject is an instance of a @User@, or @Account@, or whatever model you use for
-authentication.  Object is an instance of any class (including subject class!)
+authentication. Object is an instance of any class (including subject class!)
 or @nil@ (in which case it's a global role).
 
 Acl9 builtin role control subsystem provides @has_role?@ method for you, but you can
