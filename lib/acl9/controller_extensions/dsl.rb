@@ -117,6 +117,7 @@ module Acl9
         @default_action.nil? ? :deny : @default_action
       end
 
+      # @return [String] Block converted to Ruby expression (which will return +true+ if access allowed)
       def expression(gen)
         allow_rules = rules.select { |rule| rule.allow? }
         deny_rules  = rules.select { |rule| rule.deny? }
@@ -136,8 +137,14 @@ module Acl9
         Dsl.send((default_action == :deny ? :andify : :orify), [allowed_expr, not_denied_expr])
       end
 
-      protected
-
+      # Set default mode.
+      #
+      # There are two modes: default allow and default deny. The "default" case
+      # occurs when neither of the rules matched.
+      #
+      # Default deny mode is used you don't call @default@ at all.
+      #
+      # @param default_action [Symbol] :allow or :deny
       def default(default_action)
         raise ArgumentError, "default can only be called once in access_control block" if @default_action
 
@@ -149,11 +156,11 @@ module Acl9
       end
 
       def allow(*args)
-        # ...
+        rule(AllowRule, *args)
       end
 
       def deny(*args)
-        # ...
+        rule(DenyRule, *args)
       end
 
       def actions(*args, &block)
@@ -164,11 +171,28 @@ module Acl9
 
       def logged_in; LOGGED_IN end
       def anonymous; ANONYMOUS end
-      def all;       ALL       end
 
-      alias everyone all
-      alias everybody all
-      alias anyone all
+      [:all, :everyone, :everybody, :anyone].each do |meth|
+        define_method(meth) { ALL }
+      end
+
+      private
+
+      def rule(klass, *args)
+        options = args.extract_options!
+
+        to = options.delete(:to)
+        except = options.delete(:except)
+
+        action_check = case
+                       when to && !except
+                         ActionCheck.new(to, true)
+                       when !to && except
+                         ActionCheck.new(except, false)
+                       when to && except
+                         raise ArgumentError, "both :to and :except cannot be specified in the rule"
+                       end
+      end
     end
   end
 end
