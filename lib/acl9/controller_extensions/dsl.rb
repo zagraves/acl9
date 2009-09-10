@@ -2,30 +2,39 @@ module Acl9
   module Dsl
     def expression_join(parts, with)
       # TODO: remove excessful parentheses
-      parts.compact.map { |p| "(#{p})" } * with
+      case parts.size
+      when 0 then "true"
+      when 1 then parts.first
+      else
+        parts.map { |p| "(#{p})" } * with
+      end
     end
 
     # Construct AND expression from parts
     #
     # @param [Array] parts Array of expressions
     def andify(parts)
-      # TODO: remove (true)
-      expression_join(parts, ' && ')
+      pc = parts.compact
+      pc.reject! { |p| p == "true" } if pc.size > 1
+
+      expression_join(pc, ' && ')
     end
 
     # Construct OR expression from parts
     #
     # @param [Array] parts Array of expressions
     def orify(parts)
-      # TODO: remove (false)
-      expression_join(parts, ' || ')
+      pc = parts.compact
+      pc.reject! { |p| p == "false" } if pc.size > 1
+      expression_join(pc, ' || ')
     end
 
     module_function :expression_join, :andify, :orify
 
     # :if or :unless rule conditions
     class Condition < Struct.new(:method, :negate)
-      # @return [String] Condition-checking expression (which will return +true+ if condition is met). Will return +nil+ if method is +nil+.
+      # @return [String] Condition-checking expression (which will return
+      #   +true+ if condition is met). Will return +nil+ if method is +nil+.
       # @param [Generator] gen Generator
       def expression(gen)
         if method
@@ -46,7 +55,8 @@ module Acl9
         @unless = Condition.new(_unless, true)
       end
 
-      # @return [String] Condition-checking expression. Will return +nil+ when both IF and UNLESS conditions are not specified.
+      # @return [String] Condition-checking expression. Will return +nil+ when
+      #   both IF and UNLESS conditions are not specified.
       # @param [Generator] gen Generator
       def expression(gen)
         res = Dsl.andify [@if.expression(gen), @unless.expression(gen)]
@@ -63,8 +73,8 @@ module Acl9
         self.actions = [actions] unless actions.is_a? Array
       end
 
-      # @return [String] Action-checking expression (which will return +true+ if current action should
-      # be checked)
+      # @return [String] Action-checking expression (which will return +true+
+      #   if current action should be checked)
       # @param [Generator] gen Generator
       def expression(gen)
         m = case actions.size
@@ -86,7 +96,8 @@ module Acl9
 
     # Access control rule
     class Rule < Struct.new(:roles, :object, :action_check, :condition)
-      # @return [String] Rule-matching expression (which will return +true+ if rule matched)
+      # @return [String] Rule-matching expression (which will return +true+ if
+      #   rule matched)
       # @param [Generator] gen Generator
       def expression(gen)
         role_checks = roles.map do |role|
@@ -170,22 +181,9 @@ module Acl9
       # @see #default
       # @see #default_action
       def expression(gen)
-        allow_rules = rules.select { |rule| rule.allow? }
-        deny_rules  = rules.select { |rule| rule.deny? }
+        exprs = [allowed_expression(gen), not_denied_expression(gen)]
 
-        allowed_expr = if allow_rules.size > 0
-                         Dsl.orify(allow_rules.map { |rule| rule.expression(gen) })
-                       else
-                         "false"
-                       end
-
-        not_denied_expr = if deny_rules.size > 0
-                            "!(#{Dsl.orify(deny_rules.map { |rule| rule.expression(gen) })})"
-                          else
-                            "true"
-                          end
-
-        Dsl.send((default_action == :deny ? :andify : :orify), [allowed_expr, not_denied_expr])
+        default_action == :deny ? Dsl.andify(exprs) : Dsl.orify(exprs)
       end
 
       # Set default allow or default deny.
@@ -196,6 +194,7 @@ module Acl9
       # Default deny mode is used you don't call {#default} at all.
       #
       # @param default_action [Symbol] :allow or :deny
+      # @see #default_action
       def default(default_action)
         raise ArgumentError, "default can only be called once in access_control block" if @default_action
 
@@ -218,12 +217,17 @@ module Acl9
       #
       #   allow :admin, :manager
       #
+      # Role names are singularized before checking, so the same line could be
+      # written as:
+      #
+      #   allow :admins, :managers
+      #
       # Acl9 supports the notion of object roles, i.e. roles tied to a specific
       # object. E.g. a 'project' might have 'manager' and 'member' roles. To
       # check an object role within the rule you should use one of the
       # preposition options (see below).
       #
-      #   allow :manager, :of => :project
+      #   allow :managers, :of => :project
       #   allow :responsible, :for => :result
       #
       # Here +project+ and +result+ will be taken from controller instance
@@ -272,7 +276,11 @@ module Acl9
       # Rule may also be conditional, i.e. considered only when certain condition is met.
       #
       #   allow all, :to => :index, :if => :users_welcome?
+      #   allow :admin, :unless => :admins_forbidden?
+      #   allow :destroy_everything, :if => :really_sure?, :unless => :triple_confirmation_failed?
       #
+      # Conditions must be implemented as controller instance methods. They
+      # will be evaluated before role checking.
       #
       # @overload allow(*roles, opts={})
       #   @param [Array] roles A list of roles. Each role is either a Symbol (+:admin+, +:manager+, etc.),
@@ -310,8 +318,10 @@ module Acl9
       end
 
       def actions(*args, &block)
-        # TODO
-        raise
+        raise ArgumentError, "actions should receive at least 1 action as argument" if args.size < 1
+
+        sub = Subprocessor.new
+        sub.acl_block!(&block)
       end
 
       alias action actions
@@ -394,7 +404,7 @@ module Acl9
       alias everybody all
       alias anyone all
 
-      private
+      protected
 
       VALID_PREPOSITIONS = %w(of for in on at by).freeze #unless defined? VALID_PREPOSITIONS
 
@@ -442,6 +452,45 @@ module Acl9
         condition = DoubleCondition.new(_if, _unless) if (_if || _unless)
 
         @rules << rule_class.new(args, object, action_check, condition)
+      end
+
+      def allowed_expression(gen)
+        allow_rules = rules.select { |rule| rule.allow? }
+
+        if allow_rules.size > 0
+          Dsl.orify(allow_rules.map { |rule| rule.expression(gen) })
+        else
+          "false"
+        end
+      end
+
+      def not_denied_expression(gen)
+        deny_rules  = rules.select { |rule| rule.deny? }
+
+        if deny_rules.size > 0
+          "!(#{Dsl.orify(deny_rules.map { |rule| rule.expression(gen) })})"
+        else
+          "true"
+        end
+      end
+    end
+
+    class Subprocessor < Processor
+      def actions(*args)
+        raise ArgumentError, "You cannot use actions inside another actions block"
+      end
+
+      def default(*args)
+        raise ArgumentError, "You cannot use default inside an actions block"
+      end
+
+      def rule(rule_class, *args)
+        opts = args.last
+        if opts.is_a? Hash && (opts[:to] || opts[:except])
+          raise ArgumentError, "You cannot use :to/:except inside actions block"
+        end
+
+        super
       end
     end
   end
