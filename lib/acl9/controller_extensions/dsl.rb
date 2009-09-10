@@ -208,21 +208,84 @@ module Acl9
 
       # Add an allow rule
       #
-      # Rule is cool.
+      # This creates a record in the {#rules rules} table. Rule states that
+      # users with specified roles (or pseudoroles, such as {#all all},
+      # {#logged_in logged_in} or {#anonymous anonymous}) are allowed into
+      # certain actions of controller.
       #
-      # @example
-      #   allow all
+      # Roles are given as positional arguments. For example, here users with
+      # 'admin' and 'manager' roles are allowed:
+      #
+      #   allow :admin, :manager
+      #
+      # Acl9 supports the notion of object roles, i.e. roles tied to a specific
+      # object. E.g. a 'project' might have 'manager' and 'member' roles. To
+      # check an object role within the rule you should use one of the
+      # preposition options (see below).
+      #
+      #   allow :manager, :of => :project
+      #   allow :responsible, :for => :result
+      #
+      # Here +project+ and +result+ will be taken from controller instance
+      # variables (or from optional variables hash in the case of query method,
+      # see {Acl9::ControllerExtensions::ClassMethods#access_control
+      # access_control}).
+      #
+      # All role checks are done with {Acl9::ModelExtensions::Subject#has_role?
+      # user.has_role?} call, and the object will be passed as the second
+      # parameter, like this:
+      #
+      #   current_user.has_role?('manager', @project)
+      #   current_user.has_role?('responsible', @result)
+      #
+      # Another possibility is a class role, i.e. role tied to a class.
+      #
+      #   allow :employed, :by => FBI
+      #
+      # This will make
+      #
+      #   current_user.has_role?('manager', FBI)
+      #
+      # in the code.
+      #
+      # If two (or more) roles are specified along with a preposition option, they are both
+      # treated as object (or class) roles:
+      #
+      #   allow :devil, :son, :of => God
+      #   # same as
+      #   allow :devil, :of => God
+      #   allow :son,   :of => God
+      #   # NOT this:
+      #   # allow :devil
+      #   # allow :son, :of => God
+      #
+      # Preposition options are ignored for pseudoroles.
+      #
+      # A rule may have limited action scope, in which case it will be
+      # considered only for specified controller actions. Scope is specified
+      # with +:to+ and +:except+ options.
+      #
+      #   allow all, :to => [:index, :show]    # only index and show allowed
+      #   allow :ripper, :to => :destroy       # only destroy allowed
+      #   allow :manager, :except => :destroy  # anything but destroy action is allowed
+      #
+      # Rule may also be conditional, i.e. considered only when certain condition is met.
+      #
+      #   allow all, :to => :index, :if => :users_welcome?
       #
       #
       # @overload allow(*roles, opts={})
-      #   @param [Array] roles A list of roles. Each role is either a Symbol (+:admin+, +:manager+, etc.) or a pseudorole  (+all+, +logged_in+ or +anonymous+.
+      #   @param [Array] roles A list of roles. Each role is either a Symbol (+:admin+, +:manager+, etc.),
+      #     a String ('admin', 'manager') or a pseudorole  (+all+, +logged_in+ or +anonymous+.
       #   @param [Hash] options Rule options
       #   @option opts [Symbol] :if Method that should return trueish value for the rule to be considered
       #   @option opts [Symbol] :unless Method that should return +nil+ or +false+ for the rule to be considered
-      #   @option opts [Array<Symbol, String>, Symbol, String] :to Action scope. A list of actions (or single action) the rule will only be considered for.
-      #   @option opts [Array<Symbol, String>, Symbol, String] :except Action scope. A list of actions (or single action) the rule will not be considered for.
+      #   @option opts [Array<Symbol, String>, Symbol, String] :to Action scope. A list of actions (or single action) 
+      #     the rule will only be considered for.
+      #   @option opts [Array<Symbol, String>, Symbol, String] :except Action scope. A list of actions (or single action)
+      #     the rule will not be considered for.
 
-      #   @option opts [Symbol, Class] :of Object.
+      #   @option opts [Symbol, Class] :of Object for an object role check.
       #   @option opts [Symbol, Class] :for Synonym for +:of+
       #   @option opts [Symbol, Class] :in Synonym for +:of+
       #   @option opts [Symbol, Class] :on Synonym for +:of+
