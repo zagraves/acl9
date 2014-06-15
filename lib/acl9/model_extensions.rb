@@ -90,16 +90,19 @@ module Acl9
 
         has_many :accepted_roles, :as => :authorizable, :class_name => role, :dependent => :destroy
 
-        has_many :"#{subj_table}",
-          :finder_sql => proc { "SELECT DISTINCT #{subj_table}.* " +
-                                "FROM #{subj_table} INNER JOIN #{join_table} ON #{subj_col}_id = #{subj_table}.id " +
-                                "INNER JOIN #{role_table} ON #{role_table}.id = #{role.underscore}_id " +
-                                "WHERE authorizable_type = '#{self.class.base_class.to_s}' AND authorizable_id = #{id} "},
-          :counter_sql => proc { "SELECT COUNT(DISTINCT #{subj_table}.id)" + 
-                                 "FROM #{subj_table} INNER JOIN #{join_table} ON #{subj_col}_id = #{subj_table}.id " +
-                                 "INNER JOIN #{role_table} ON #{role_table}.id = #{role.underscore}_id " +
-                                 "WHERE authorizable_type = '#{self.class.base_class.to_s}' AND authorizable_id = #{id} "},
-          :readonly => true
+        has_many :"#{subj_table}", -> { 
+          "SELECT DISTINCT #{subj_table}.* " +
+          "FROM #{subj_table} INNER JOIN #{join_table} ON #{subj_col}_id = #{subj_table}.id " +
+          "INNER JOIN #{role_table} ON #{role_table}.id = #{role.underscore}_id " +
+          "WHERE authorizable_type = '#{self.base_class.to_s}' AND authorizable_id = #{proxy_association.owner.id}" 
+        } do
+          def count
+            count_by_sql "SELECT COUNT(DISTINCT #{subj_table}.id) " + 
+                         "FROM #{subj_table} INNER JOIN #{join_table} ON #{subj_col}_id = #{subj_table}.id " +
+                         "INNER JOIN #{role_table} ON #{role_table}.id = #{role.underscore}_id " +
+                         "WHERE authorizable_type = '#{self.base_class.to_s}' AND authorizable_id = #{proxy_association.owner.id}"
+          end
+        end
 
         include Acl9::ModelExtensions::ForObject
       end
